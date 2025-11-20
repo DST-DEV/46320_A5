@@ -1,0 +1,271 @@
+from pathlib import Path
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+from lacbox.io import load_stats
+import scivis
+
+# %% User input
+
+fname_stats_A5 = "IEC_What_You_Did_There_turb_stats"
+fname_stats_dtu = "dtu_10mw_turb_stats"
+
+eval_oper = True
+eval_DELs = True
+show_plots = True
+latex = False
+
+ # %% Data preparation
+
+# File paths
+ROOT = Path(__file__).parent.parent
+STATS_PATH_ROOT = ROOT /"hawc_files" / "stats"
+STATS_PATH_A5 = STATS_PATH_ROOT / (fname_stats_A5 + '.csv')
+STATS_PATH_DTU = STATS_PATH_ROOT / (fname_stats_dtu + '.csv')
+SUBFOLDERs = ['tca','tcb']  # which subfolder to plot: turb class A or B
+SAVE_PLOTS_PATH  = ROOT / "plots" / "stats_eval"
+SAVE_PLOTS_PATH.mkdir(parents=True, exist_ok=True)
+
+# Load statistics
+h2stats_A5, wsps_A5 = load_stats(STATS_PATH_A5, statstype='turb')
+h2stats_dtu, wsps_dtu = load_stats(STATS_PATH_DTU, statstype='turb')
+
+wsps_A5 = np.sort(wsps_A5)
+h2stats_A5.fillna(0, inplace=True)
+h2stats_dtu.fillna(0, inplace=True)
+
+h2stats_A5 = h2stats_A5[h2stats_A5.subfolder == 'tcb']  # use IIIB class for redesign
+h2stats_dtu = h2stats_dtu[h2stats_dtu.subfolder == 'tca']  # use IA class for DTU
+
+stats_dict = {"dtu": h2stats_dtu, "redesign": h2stats_A5}
+
+# Channels to evaluate
+chan_ids_op_data = ['BldPit', 'RotSpd', 'Thrust', 'GenTrq', 'ElPow']
+chan_id_loads = ['TbFA', 'TbSS','YbTilt', 'YbRoll', 'ShftTrs', 'OoPBRM',
+                 'IPBRM']
+sn_slopes_dict = {'TbFA': 4, 'TbSS': 4,'YbTilt': 4, 'YbRoll': 4, 'ShftTrs': 4,
+                  'OoPBRM': 10, 'IPBRM': 10}
+CHAN_DESCS = {'BldPit': 'pitch1 angle',
+            'RotSpd': 'rotor speed',
+            'Thrust': 'aero rotor thrust',
+            'GenTrq': 'generator torque',
+            'ElPow': 'pelec',
+            'TbFA': 'momentmx mbdy:tower nodenr:   1',
+            'TbSS': 'momentmy mbdy:tower nodenr:   1',
+            'YbTilt': 'momentmx mbdy:tower nodenr:  11',
+            'YbRoll': 'momentmy mbdy:tower nodenr:  11',
+            'ShftTrs': 'momentmz mbdy:shaft nodenr:   4',
+            'OoPBRM': 'momentmx mbdy:blade1 nodenr:   1 coo: hub1',
+            'IPBRM': 'momentmy mbdy:blade1 nodenr:   1 coo: hub1',
+            'FlpBRM': 'momentmx mbdy:blade1 nodenr:   1 coo: blade1',
+            'EdgBRM': 'momentmy mbdy:blade1 nodenr:   1 coo: blade1',
+            'OoPHub': 'momentmx mbdy:hub1 nodenr:   1 coo: hub1',
+            'IPHub': 'momentmy mbdy:hub1 nodenr:   1 coo: hub1'
+                }
+
+# Prepare datasets for the statistics
+base_stats = ["min", "mean", "max", "std"]
+N_base_stats = len(base_stats)
+N_wsp = len(wsps_A5)
+N_turbines = len(stats_dict)
+sn_slopes = (4, 10)
+
+sim_count = h2stats_A5[h2stats_A5.desc=='pitch1 angle']["wsp"].value_counts()
+assert sim_count.nunique() == 1, "Not all bins have same number of simulations!"
+N_sim = sim_count.iloc[0]  # Number of simulations per wind bin
+ds_stats_shape = (N_wsp, N_base_stats + 1, N_turbines, N_sim)
+
+
+if eval_oper:
+    if eval_DELs:
+        ds_stats_keys = chan_ids_op_data + chan_id_loads
+        SCAL_FACTOR = 1.35
+        SAFE_FACTOR = 1.25
+    else:
+        ds_stats_keys = chan_ids_op_data
+else:
+    ds_stats_keys = chan_id_loads
+
+ds_stats_raw = xr.Dataset(
+    {
+        chan_id: (["wsp", "stat", "turbine", "sim"],
+                  np.empty(ds_stats_shape))
+        for chan_id in ds_stats_keys
+     },
+    coords={
+        "wsp": wsps_A5,
+        "stat": base_stats + ["del10min"],
+        "turbine": ["dtu", "redesign"],
+        "sim": np.arange(N_sim)
+    },
+)
+
+ds_stats_eval = xr.Dataset(
+    {
+        chan_id: (["wsp", "stat", "turbine"],
+                  np.empty(ds_stats_shape[:-1]))
+        for chan_id in ds_stats_keys
+     },
+    coords={
+        "wsp": wsps_A5,
+        "stat": base_stats + ["del1h"],
+        "turbine": ["dtu", "redesign"]
+    },
+)
+
+# Retrieve statistics for each wind bin
+chan_units = {}
+for ch in ds_stats_keys:
+    if ch in chan_id_loads:
+        load_ch = True
+        m_chan = sn_slopes_dict[ch]
+    else:
+        load_ch = False
+
+    for turbine, stats in stats_dict.items():
+        stats_chan = stats.filter_channel(
+            ch, CHAN_DESCS).sort_values(
+                ["wsp", "filename"]).reset_index(drop=True)
+
+        chan_units[ch] = stats_chan["units"].values[0]
+        wsp_i = stats_chan["wsp"].unique()
+
+        ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": base_stats,
+                          "turbine": turbine}] \
+            = np.swapaxes(stats_chan[base_stats].to_numpy().reshape(
+                len(wsp_i), N_sim, N_base_stats), 1, 2)
+
+        if load_ch:
+            ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": "del10min",
+                              "turbine": turbine}] \
+                = stats_chan[f"del{m_chan}"].to_numpy().reshape(
+                    len(wsp_i), N_sim)
+
+    if load_ch:
+        dels_1h = np.sum(
+            ds_stats_raw[ch].sel(stat="del10min").values**m_chan/6,
+            axis=-1)**(1/m_chan)
+        ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": "del1h"}] = dels_1h
+
+    ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": base_stats}] \
+    = np.nanmean(ds_stats_raw[ch].sel(stat=base_stats).values, axis=-1)
+
+# Calculate fatigue and ultimate design loads
+if eval_DELs:
+    ultimate_loads = pd.DataFrame(columns=chan_id_loads, index=stats_dict.keys())
+    dels_20a = pd.DataFrame(columns=chan_id_loads, index=stats_dict.keys())
+
+    # Wind distribution (Rayleigh cumulative probability density)
+    V_ave = np.array([10, 7.5]).reshape((-1,1))
+    wsp_bins = np.append(wsps_A5-.5, wsps_A5[-1]+.5)
+    cdf_bins = 1 - np.exp(-np.pi/4 * (wsp_bins / V_ave)**2)
+    pdf_bins = cdf_bins[:, 1:] - cdf_bins[:, :-1]
+
+    # Number of cycles
+    n_20 = 3600*8760*20  # number of cycles in 20 years assuming 1 Hz sampling
+    n_eq = 1e7 # equivalent number of cycles based on the IEC standards
+
+    for ch in chan_id_loads:
+        # Calculate ultimate load
+        ultimate_loads[ch] = np.max(np.abs(ds_stats_eval[ch].sel(
+            stat=["min", "max"]).values), axis=(0, 1)) \
+            * SCAL_FACTOR * SAFE_FACTOR
+
+        # Calculate lifetime fatigue load
+        m_chan = sn_slopes_dict[ch]
+        dels_1h = np.squeeze(ds_stats_eval[ch].sel(stat=["del1h"]).values, 1).T
+        dels_20a[ch] = (n_20/n_eq * np.sum(pdf_bins*dels_1h**m_chan, axis=1)) \
+            **(1/m_chan)
+
+# Plot operational data
+if show_plots:
+    label_mapping = {"BldPit":r"\theta", "RotSpd":r"\omega", "Thrust":r"T",
+                     "GenTrq":r"Q_g", "ElPow":r"P_{el}"}
+
+    rc_profile = scivis.rcparams._prepare_rcparams(latex=latex)
+    markers = {"min": "2", "mean": "x", "max": "1"}
+    col_plots = {"dtu": ('#ff6361','#ffa600'),
+                 "redesign": ('#003f5c','#58508d')}
+    turbine_labels = {"dtu": "DTU 10MW", "redesign": "Redesign"}
+    with mpl.rc_context(rc_profile):
+        for ch in ds_stats_keys:
+            if ch == "ElPow":
+                unit_scale = 1e-6
+                y_unit = "MW"
+            elif ch == "GenTrq":
+                unit_scale = 1e-6
+                y_unit = "MNm"
+            elif chan_units[ch] == "kNm":
+                unit_scale = 1e-3
+                y_unit = "MNm"
+            else:
+                unit_scale=1
+                y_unit = chan_units[ch]
+
+            y_label = label_mapping[ch] if ch in label_mapping.keys() else ch
+
+            # Plot Min/Mean/Max
+            fig, ax = scivis.subplots(profile="partsize", scale=.7,
+                                      latex=False)
+
+            for turbine in stats_dict.keys():
+                for stat in ("min", "mean", "max"):
+                    ax.scatter(wsps_A5,
+                               ds_stats_eval[ch].sel(turbine=turbine,
+                                                     stat=stat) * unit_scale,
+                               c=col_plots[turbine][0],
+                               label=" - ".join([turbine_labels[turbine],
+                                                  stat.title()]),
+                               marker=markers[stat], zorder=3)
+
+                # Shaded area between max & min curves
+                ax.fill_between( wsps_A5,
+                                *(ds_stats_eval[ch].sel(
+                                    turbine=turbine,
+                                    stat=["min", "max"]).values.T
+                                    *unit_scale),
+                                label="_",
+                                fc=col_plots[turbine][1], alpha=0.2, zorder=2)
+
+            ax.set_xlabel(r'$V\:[m/s]$')
+            ax.set_ylabel(r"$" + y_label + r"\:[{" + y_unit + r"}]$")
+
+            ax.set_xlim([4.5, 24.5])
+            ax.set_xticks(np.arange(5,25,1))
+
+            ax.minorticks_on()
+            ax.grid(which='major', zorder=1)
+            ax.grid(which='minor', visible=False)
+
+            handles, labels = ax.get_legend_handles_labels()
+            order = [0,3,1,4,2,5] # order of labels
+            ax.legend([handles[i] for i in order], [labels[i] for i in order],
+                      loc='lower center', fontsize=25,
+                      bbox_to_anchor=(0.5, 1), ncol=3, frameon=False)
+            ax.tick_params(labelrotation=30)
+
+            # Plot DELs
+            if ch in chan_id_loads:
+                # fig, ax = scivis.subplots(profile="partsize", scale=.7,
+                #                           latex=False)
+
+                markerstyle = [{"marker": "x", "mec": col_plots["dtu"][0]},
+                               {"marker": "x", "mec": col_plots["redesign"][0]}
+                               ]
+                scivis.plot_line(wsps_A5,
+                                 ds_stats_eval[ch].sel(stat="del1h").values.T
+                                 * unit_scale,
+                                 plt_labels=list(turbine_labels.values()),
+                                 ax_labels=["V", y_label],
+                                 ax_units = ["m/s", y_unit],
+                                 colors=[col_plots["dtu"][0],
+                                         col_plots["redesign"][0]],
+                                 linestyles="--", markers=markerstyle,
+                                 ax_lims=[[4.5, 24.5], None],
+                                 ax_ticks=[np.arange(5,25,1), None],
+                                 profile="partsize", scale=.7, latex=latex
+                                 )
