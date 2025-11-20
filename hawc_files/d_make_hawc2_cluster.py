@@ -33,8 +33,8 @@ WSPS = range(5, 25)
 
 # ---------- STEADY WIND ----------
 if create_steady:
-    STEADY_HTC_DIR = Path(f'./htc_steady/{DESIGN_NAME}/')  # where to save the step-wind files
-    RES_DIR = Path(f'./res_steady/{DESIGN_NAME}/')
+    STEADY_HTC_DIR = Path(f'./htc/steady/{DESIGN_NAME}/')  # where to save the step-wind files
+    RES_DIR = Path(f'./res/steady/{DESIGN_NAME}/')
     CASES = ['tilt', 'notilt', 'notiltrigid', 'notiltnodragrigid']  # ['tilt', 'notilt', 'notiltrigid', 'notiltnodragrigid']
     TIME_START = 200
     TIME_STOP = 400
@@ -64,10 +64,10 @@ if create_steady:
 # ---------- TURBULENT WIND ----------
 
 if create_turb:
-    TURB_HTC_DIR = Path(f'./htc_turb/{DESIGN_NAME}/')  # where to save the step-wind files
-    RES_DIR = Path(f'./res_turb/{DESIGN_NAME}/')
+    TURB_HTC_DIR = Path(f'./htc/turb/{DESIGN_NAME}/')  # where to save the step-wind files
+    RES_DIR = Path(f'./res/turb/{DESIGN_NAME}/')
     CASES = ['tca', 'tcb']
-    special_case = "towerExclusionV1"
+    special_case = "tower_exclusion_v2"
     TI_REF = {"tca": .16, "tcb": .14}  # Turbulence intensities for IEC A & B
     TIME_START = 100
     TIME_STOP = 700
@@ -75,8 +75,6 @@ if create_turb:
     NSEEDS = 6
 
     if model == "IEC_Ya_Later":
-        RES_DIR /= "towerExclusion_V2"
-
         # Rated speed
         rpm_rtd_HSS = 403.1  # HSS rated rotational speed [rpm]
         rpm_min_HSS = 0  # HSS minimum rotational speed [rpm]
@@ -85,7 +83,7 @@ if create_turb:
         omega_min_LSS = rpm_min_HSS/n_gear*2*np.pi/60
 
         # Load final controller tuning (C1 - omega=0.05, zeta=0.7, constant power)
-        ctrl_path = Path(ROOT, "res_hawc2s_ctrl", DESIGN_NAME +
+        ctrl_path = Path(ROOT, "control", DESIGN_NAME +
                          "_hawc2s_flex_ctrltune_CP_f0.05_Z0.7_ctrl_tuning.txt")
         ctrl_tuning_file = load_ctrl_txt(ctrl_path)
 
@@ -115,7 +113,7 @@ if create_turb:
     random.seed(START_SEED)
 
     # clean the top-level htc directory if requested
-    _clean_directory(TURB_HTC_DIR, DEL_HTC_DIR)
+    _clean_directory(TURB_HTC_DIR / special_case, DEL_HTC_DIR)
 
     # Make the turbulent wind files
     for idx_seed in range(6):
@@ -123,8 +121,6 @@ if create_turb:
             sim_seed = random.randrange(int(2**16))
             for tc in CASES:
                 htc = MyHTC(MASTER_FILE)
-
-                fname = f"_turb_{tc}_{wsp:04.1f}_{sim_seed:d}"
 
                 if model == "IEC_Ya_Later":
                     # update controller block in htc file
@@ -134,16 +130,15 @@ if create_turb:
 
                     htc.make_tower_exclusion_zone(omega_L=omega_L_rads,
                                                   omega_H=omega_H_rads,
-                                                  Q_gL=Q_gH, Q_gH=Q_gL, tau=25)
-
-                    fname += "_" + special_case
+                                                  Q_gL=Q_gL, Q_gH=Q_gH, tau=25)
 
 
+                subfolder = special_case + "/" + tc if special_case else tc
                 htc.make_turb(wsp=wsp, ti=TI_REF[tc]*(0.75*wsp+5.6)/wsp,
                               seed=sim_seed,
-                              append=fname,
+                              append=f"_turb_{tc}_{wsp:04.1f}_{sim_seed:d}",
                               save_dir=TURB_HTC_DIR,
-                              subfolder=special_case + "/" + tc,
+                              subfolder=subfolder,
                               opt_path=OPT_PATH, resdir=RES_DIR,
                               dy=190, dz=190,
                               rigid=False, withdrag=True, tilt=None,
