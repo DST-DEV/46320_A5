@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -11,8 +10,11 @@ import scivis
 
 # %% User input
 
-fname_stats_A5 = "IEC_What_You_Did_There_turb_stats"
-fname_stats_dtu = "dtu_10mw_turb_stats"
+fname_stats_A5 = "IEC_Ya_Later_tower_exclusion_v4_turb_stats"
+# fname_stats_A5 = "IEC_Ya_Later_new_seeds_turb_stats"
+# fname_stats_A5 = "IEC_What_You_Did_There_turb_stats"
+fname_stats_dtu = "dtu_10mw_new_seeds_turb_stats"
+# fname_stats_dtu = "dtu_10mw_new_seeds_turb_stats"
 
 eval_oper = True
 eval_DELs = True
@@ -40,6 +42,8 @@ h2stats_dtu.fillna(0, inplace=True)
 
 h2stats_A5 = h2stats_A5[h2stats_A5.subfolder == 'tcb']  # use IIIB class for redesign
 h2stats_dtu = h2stats_dtu[h2stats_dtu.subfolder == 'tca']  # use IA class for DTU
+# h2stats_A5 = h2stats_A5[h2stats_A5.subfolder == 'tca']  # use IIIB class for redesign
+# h2stats_dtu = h2stats_dtu[h2stats_dtu.subfolder == 'tca']  # use IA class for DTU
 
 stats_dict = {"dtu": h2stats_dtu, "redesign": h2stats_A5}
 
@@ -154,7 +158,7 @@ for ch in ds_stats_keys:
     ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": base_stats}] \
     = np.nanmean(ds_stats_raw[ch].sel(stat=base_stats).values, axis=-1)
 
-# Calculate fatigue and ultimate design loads
+# %% Calculate fatigue and ultimate design loads
 if eval_DELs:
     ultimate_loads = pd.DataFrame(columns=chan_id_loads, index=stats_dict.keys())
     dels_20a = pd.DataFrame(columns=chan_id_loads, index=stats_dict.keys())
@@ -181,7 +185,7 @@ if eval_DELs:
         dels_20a[ch] = (n_20/n_eq * np.sum(pdf_bins*dels_1h**m_chan, axis=1)) \
             **(1/m_chan)
 
-# Plot operational data
+# Plot operational data, loads and DELs
 if show_plots:
     label_mapping = {"BldPit":r"\theta", "RotSpd":r"\omega", "Thrust":r"T",
                      "GenTrq":r"Q_g", "ElPow":r"P_{el}"}
@@ -250,9 +254,6 @@ if show_plots:
 
             # Plot DELs
             if ch in chan_id_loads:
-                # fig, ax = scivis.subplots(profile="partsize", scale=.7,
-                #                           latex=False)
-
                 markerstyle = [{"marker": "x", "mec": col_plots["dtu"][0]},
                                {"marker": "x", "mec": col_plots["redesign"][0]}
                                ]
