@@ -40,11 +40,6 @@ wsps_A5 = np.sort(wsps_A5)
 h2stats_A5.fillna(0, inplace=True)
 h2stats_dtu.fillna(0, inplace=True)
 
-h2stats_A5 = h2stats_A5[h2stats_A5.subfolder == 'tcb']  # use IIIB class for redesign
-h2stats_dtu = h2stats_dtu[h2stats_dtu.subfolder == 'tca']  # use IA class for DTU
-# h2stats_A5 = h2stats_A5[h2stats_A5.subfolder == 'tca']  # use IIIB class for redesign
-# h2stats_dtu = h2stats_dtu[h2stats_dtu.subfolder == 'tca']  # use IA class for DTU
-
 stats_dict = {"dtu": h2stats_dtu, "redesign": h2stats_A5}
 
 # Channels to evaluate
@@ -78,12 +73,21 @@ N_wsp = len(wsps_A5)
 N_turbines = len(stats_dict)
 sn_slopes = (4, 10)
 
+# Retrieve and check turblence classes
+tc_A5 = set(h2stats_A5["subfolder"].unique())  # Turbulence classes for A5
+tc_dtu = set(h2stats_dtu["subfolder"].unique())  # Turbulence classes for DTU
+assert len(tc_A5)>0, "No turbulance classes given for redesigned turbine"
+assert len(tc_dtu)>0, "No turbulance classes given for DTU 10 MW"
+
+tc_dict = {"dtu": tc_dtu, "redesign": tc_A5}
+tc = list(tc_A5.union(tc_dtu))
+
+# Check number of wind bins (assuming they are the same for A5 & the DTU 10 MW)
 sim_count = h2stats_A5[h2stats_A5.desc=='pitch1 angle']["wsp"].value_counts()
 assert sim_count.nunique() == 1, "Not all bins have same number of simulations!"
 N_sim = sim_count.iloc[0]  # Number of simulations per wind bin
-ds_stats_shape = (N_wsp, N_base_stats + 1, N_turbines, N_sim)
 
-
+# Prepare load channels
 if eval_oper:
     if eval_DELs:
         ds_stats_keys = chan_ids_op_data + chan_id_loads
@@ -94,28 +98,32 @@ if eval_oper:
 else:
     ds_stats_keys = chan_id_loads
 
+ds_stats_shape = (N_wsp, len(tc), N_base_stats + 1, N_turbines, N_sim)
+
 ds_stats_raw = xr.Dataset(
     {
-        chan_id: (["wsp", "stat", "turbine", "sim"],
+        chan_id: (["wsp", "tc", "stat", "turbine", "sim"],
                   np.empty(ds_stats_shape))
         for chan_id in ds_stats_keys
      },
     coords={
         "wsp": wsps_A5,
+        "tc": tc,
         "stat": base_stats + ["del10min"],
         "turbine": ["dtu", "redesign"],
-        "sim": np.arange(N_sim)
+        "sim": np.arange(N_sim),
     },
 )
 
 ds_stats_eval = xr.Dataset(
     {
-        chan_id: (["wsp", "stat", "turbine"],
+        chan_id: (["wsp", "tc", "stat", "turbine"],
                   np.empty(ds_stats_shape[:-1]))
         for chan_id in ds_stats_keys
      },
     coords={
         "wsp": wsps_A5,
+        "tc": tc,
         "stat": base_stats + ["del1h"],
         "turbine": ["dtu", "redesign"]
     },
@@ -123,40 +131,45 @@ ds_stats_eval = xr.Dataset(
 
 # Retrieve statistics for each wind bin
 chan_units = {}
-for ch in ds_stats_keys:
-    if ch in chan_id_loads:
-        load_ch = True
-        m_chan = sn_slopes_dict[ch]
-    else:
-        load_ch = False
+for turbine, stats in stats_dict.items():
+    for tc_i in tc_dict[turbine]:
+        # Filter stats for turbulence class
+        stats_tc_i = stats[stats.subfolder == tc_i]
 
-    for turbine, stats in stats_dict.items():
-        stats_chan = stats.filter_channel(
-            ch, CHAN_DESCS).sort_values(
-                ["wsp", "filename"]).reset_index(drop=True)
+        for ch in ds_stats_keys:
+            if ch in chan_id_loads:
+                load_ch = True
+                m_chan = sn_slopes_dict[ch]
+            else:
+                load_ch = False
 
-        chan_units[ch] = stats_chan["units"].values[0]
-        wsp_i = stats_chan["wsp"].unique()
+            stats_chan = stats_tc_i.filter_channel(
+                ch, CHAN_DESCS).sort_values(
+                    ["wsp", "filename"]).reset_index(drop=True)
 
-        ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": base_stats,
-                          "turbine": turbine}] \
-            = np.swapaxes(stats_chan[base_stats].to_numpy().reshape(
-                len(wsp_i), N_sim, N_base_stats), 1, 2)
+            chan_units[ch] = stats_chan["units"].values[0]
+            wsp_i = stats_chan["wsp"].unique()
 
-        if load_ch:
-            ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": "del10min",
-                              "turbine": turbine}] \
-                = stats_chan[f"del{m_chan}"].to_numpy().reshape(
+            ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": base_stats,
+                              "turbine": turbine, "tc": tc_i}] \
+                = np.swapaxes(stats_chan[base_stats].to_numpy().reshape(
+                    len(wsp_i), N_sim, N_base_stats), 1, 2)
+
+            if load_ch:
+                dels_10min = stats_chan[f"del{m_chan}"].to_numpy().reshape(
                     len(wsp_i), N_sim)
+                ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": "del10min",
+                                  "turbine": turbine, "tc": tc_i}] = dels_10min
 
-    if load_ch:
-        dels_1h = np.sum(
-            ds_stats_raw[ch].sel(stat="del10min").values**m_chan/6,
-            axis=-1)**(1/m_chan)
-        ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": "del1h"}] = dels_1h
+                dels_1h = np.sum(dels_10min**m_chan/6, axis=-1)**(1/m_chan)
+                ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": "del1h",
+                                       "turbine": turbine, "tc": tc_i}
+                                      ] = dels_1h
 
-    ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": base_stats}] \
-    = np.nanmean(ds_stats_raw[ch].sel(stat=base_stats).values, axis=-1)
+            ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": base_stats,
+                                   "turbine": turbine, "tc": tc_i}] \
+                = np.nanmean(ds_stats_raw[ch].sel(
+                    stat=base_stats, turbine=turbine, tc=tc_i).values, axis=-1)
 
 # %% Calculate fatigue and ultimate design loads
 if eval_DELs:
@@ -175,15 +188,26 @@ if eval_DELs:
 
     for ch in chan_id_loads:
         # Calculate ultimate load
-        ultimate_loads[ch] = np.max(np.abs(ds_stats_eval[ch].sel(
-            stat=["min", "max"]).values), axis=(0, 1)) \
+        ult_loads = lambda minmax: np.max(np.abs(minmax)) \
             * SCAL_FACTOR * SAFE_FACTOR
+
+        ultimate_loads.loc["dtu", ch] = ult_loads(ds_stats_eval[ch].sel(
+            stat=["min", "max"], turbine="dtu", tc="tca").values)
+        ultimate_loads.loc["redesign", ch] = ult_loads(ds_stats_eval[ch].sel(
+            stat=["min", "max"], turbine="redesign", tc="tcb").values)
 
         # Calculate lifetime fatigue load
         m_chan = sn_slopes_dict[ch]
-        dels_1h = np.squeeze(ds_stats_eval[ch].sel(stat=["del1h"]).values, 1).T
+        dels_1h = np.hstack(
+            [ds_stats_eval[ch].sel(stat=["del1h"], turbine="dtu",
+                                   tc="tca").values,
+            ds_stats_eval[ch].sel(stat=["del1h"], turbine="redesign",
+                                  tc="tcb").values]).T
         dels_20a[ch] = (n_20/n_eq * np.sum(pdf_bins*dels_1h**m_chan, axis=1)) \
             **(1/m_chan)
+
+import warnings
+warnings.warn("TEST THE DELS AGAIN AFTER I CHANGED THE CALCULATION WITH THE TURBULENCE CLASSES")
 
 # Plot operational data, loads and DELs
 if show_plots:
@@ -270,3 +294,5 @@ if show_plots:
                                  ax_ticks=[np.arange(5,25,1), None],
                                  profile="partsize", scale=.7, latex=latex
                                  )
+
+# %% Calculate AEP
