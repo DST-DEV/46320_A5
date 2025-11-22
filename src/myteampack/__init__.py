@@ -195,7 +195,8 @@ class MyHTC(HTCFile):
         return x, y, z, twist
 
     def make_hawc2s(self, save_dir, rigid, append, opt_path,
-                     genspeed=None, minipitch=0, opt_lambda=7.5, **kwargs):
+                     genspeed=None, minipitch=0, opt_lambda=7.5,
+                     output_dir="./res/hawc2s",  **kwargs):
         """Make a HAWC2S file with specific settings.
 
         Args:
@@ -212,13 +213,17 @@ class MyHTC(HTCFile):
         """
         # verify the file has hawcstab2 block
         self._check_hawcstab2()
+
         # delete blocks in master htc file that HAWC2S doesn't use
         self._del_not_h2s_blocks()
+
         # update the flexibility parameter in operational_data subblock
         defl_flag = [1, 0][rigid]  # 0 if rigid=True, else 1
         self.hawcstab2.operational_data.include_torsiondeform = defl_flag
+
         # correct the path to the opt file
         self.hawcstab2.operational_data_filename = opt_path
+
         # update the minimum generator speed
         if not genspeed is None:
             self.hawcstab2.operational_data.genspeed = genspeed
@@ -226,8 +231,13 @@ class MyHTC(HTCFile):
             self.hawcstab2.operational_data.minipitch = minipitch
         if opt_lambda != 7.5:
             self.hawcstab2.operational_data.opt_lambda = opt_lambda
+
         # add hawc2s commands
         self._add_hawc2s_commands(rigid=rigid, **kwargs)
+
+        # Change output directory
+        self.hawcstab2.output_folder.values = [output_dir]
+
         # update filename and save the file
         name = self._update_name_and_save(save_dir, append)
         print(f'File "{name}" saved.')
