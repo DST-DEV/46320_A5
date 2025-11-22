@@ -8,10 +8,10 @@ This script creates/updates the following files for your design:
 from collections.abc import Sequence
 from pathlib import Path
 import warnings
+import json
 
 import lacbox
-from lacbox.io import load_ae, load_st, load_oper, save_ae, save_st, \
-    save_oper, load_pc, load_c2def, save_c2def
+from lacbox.io import load_ae, load_st, save_ae, save_st, load_pc, load_c2def
 from lacbox.rotor_design import get_design_functions, single_point_design, \
     scale_ST_data
 import matplotlib as mpl
@@ -28,11 +28,11 @@ from myteampack import MyHTC
 import scivis
 
 # %% Preparations
-DESIGN_NAME = "IEC_Ya_Later"
+DESIGN_NAME = "IEC_What_You_Did_There"
 # Note that files starting with the design name should be in the .gitignore
-SHOW_PLOT = False  # Flag for showing plots
-EXP_FLD = "plots"
-SAVEFIG = False  # Flag for exporting figures to a file
+SHOW_PLOT = True  # Flag for showing plots
+EXP_FLD = Path(__file__).parent.parent / "plots" / "rotor_design"
+SAVEFIG = True  # Flag for exporting figures to a file
 LATEX = False  # Flag for using latex text interpretation
 FIG_SCALE = .75  # Scaling factor for figures
 
@@ -361,7 +361,7 @@ if SHOW_PLOT:
                          "C_l_vs_alpha_design_functions_all.svg"))
 
 # Chosen design values: Design curve 1
-idx_des = 0
+idx_des = 1
 aoa_des_func = des_funcs["aoa_des"][idx_des]
 cl_des_func = des_funcs["cl_des"][idx_des]
 cd_des_func = des_funcs["cd_des"][idx_des]
@@ -452,7 +452,7 @@ for tsr_i in tsr:
             r+R_HUB, t, tsr_i, R,
             des_funcs["cl_des"][func], des_funcs["cd_des"][func],
             des_funcs["aoa_des"][func],
-            c_root, c_max, B
+            c_root, c_max, B,
         )
 
         for key, value in blade_design.items():
@@ -464,39 +464,44 @@ idx_CPmax = np.argwhere(ds_spo["CP"].sel(r=0, func=idx_des+1).values == C_P_max)
 TSR_max = round(tsr[idx_CPmax], 1)
 
 TS_MAX = 90  # Maximum allowed tip speed [m/s]
-if GEN_SPEED_MAX_ORIG/60 * (2*np.pi*R) / GEAR_RATIO_ORIG > TS_MAX:
-    GEN_SPEED_MAX = TS_MAX / (2*np.pi*R) * GEAR_RATIO_ORIG * 60
-    GEN_SPEED_MAX = GEN_SPEED_MAX // 0.01 / 100  # Round to two decimal points
+if TSR_max*V_RTD > TS_MAX:
+    GEN_SPEED_MAX = TS_MAX / (2*np.pi*R) * GEAR_RATIO_ORIG * 60  # [rpm]
 else:
-    GEN_SPEED_MAX = GEN_SPEED_MAX_ORIG
+    GEN_SPEED_MAX = TSR_max*V_RTD/R*GEAR_RATIO_ORIG *60 / (2*np.pi)  # [rpm]
 
-if True:
-    fig, ax, fpath = scivis.plot_line(
-        tsr, ds_spo["CT"].sel(r=0).values.T,
-        ax_labels=[r"TSR", "C_T"],
-        plt_labels=[f"Design Function {i+1}" for i in range(N_DES_FUNC)],
-        ax_show_minor_ticks=True,
-        ax_lims=[(tsr[0], tsr[-1]), None],
-        cmap=cmap_custom,
-        linewidths=1.7, linestyles="-",
-        latex=LATEX, profile="partsize", scale=FIG_SCALE,
-        overflow=False, savefig=False)
+GEN_SPEED_MAX = GEN_SPEED_MAX // 0.01 / 100  # Round to two decimal points
 
-    ax.axvline(TSR_max, ls="--", c="k", lw=2)
-    ax.axhline(C_P_max, ls="--", c="k", lw=2)
+if SHOW_PLOT:
+    for suffix in ["P", "T"]:
+        fig, ax, fpath = scivis.plot_line(
+            tsr, ds_spo["C" + suffix].sel(r=0).values.T,
+            ax_labels=[r"TSR", "C_" + suffix],
+            plt_labels=[f"Design Function {i+1}" for i in range(N_DES_FUNC)],
+            ax_show_minor_ticks=True,
+            ax_lims=[(tsr[0], tsr[-1]), None],
+            cmap=cmap_custom,
+            linewidths=1.7, linestyles="-",
+            latex=LATEX, profile="partsize", scale=FIG_SCALE,
+            overflow=False, savefig=False)
 
-    if SAVEFIG:
-        fig.savefig(Path(ROOT, EXP_FLD, "C_P_vs_TSR.svg"))
+        ax.axvline(TSR_max, ls="--", c="k", lw=2)
+        ax.axhline(C_P_max, ls="--", c="k", lw=2)
+
+        if SAVEFIG:
+            fig.savefig(Path(ROOT, EXP_FLD, f"C_{suffix}_vs_TSR.svg"))
 
 # Get your new rotor design using: single_point_design
 rotor_design = {}
 for key in ds_spo.keys():
     rotor_design[key] = ds_spo[key][:, idx_CPmax, idx_des+1].values
 
-np.save("array_aoa.npy", ds_spo['aoa'].sel(tsr=7,func=1,method='nearest').values)
-np.save("array_cl.npy", ds_spo['cl'].sel(tsr=7,func=1,method='nearest').values)
-np.save("array_cd.npy", ds_spo['cd'].sel(tsr=7,func=1,method='nearest').values)
-np.save("array_r.npy", r)
+np.save("./data/array_aoa.npy",
+        ds_spo['aoa'].sel(tsr=7, func=1, method='nearest').values)
+np.save("./data/array_cl.npy",
+        ds_spo['cl'].sel(tsr=7, func=1, method='nearest').values)
+np.save("./data/array_cd.npy",
+        ds_spo['cd'].sel(tsr=7, func=1, method='nearest').values)
+np.save("./data/array_r.npy", r)
 # %% Scale structural data
 # Scale the structural data using: scale_ST_data
 st_data_flex = load_st(ORIG_BLADE_ST, 0, 0)
@@ -611,3 +616,11 @@ htc.save(TARGET_HTC)
 htc = MyHTC(TARGET_HTC)
 htc.set_main_body_c2_def_axis(*bld_c2def_scaled.T, mbdy_name="blade1")
 htc._update_name_and_save(TARGET_HTC.parent, ".htc", name=DESIGN_NAME)
+
+
+with open(ROOT / "data" / f"{DESIGN_NAME}_params.json", "w") as outfile:
+    json.dump({"R": R, "sc_bld": sc_bld, "sc_R": sc_R, "V_rtd": V_RTD,
+                "des_func": idx_des+1, "tsr_des": TSR_max,
+                "omega_gen_rtd_rpm": GEN_SPEED_MAX,
+                "omega_rot_rtd_rads": GEN_SPEED_MAX/GEAR_RATIO_ORIG/60*2*np.pi},
+              outfile)
