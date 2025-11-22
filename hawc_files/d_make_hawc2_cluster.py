@@ -19,7 +19,10 @@ from myteampack import MyHTC
 # Select what to create
 create_steady = False
 create_turb = True
+tow_rot_excl = True  # whether to use the rotational speed exclusion zone to mitigate tower resonance
+# low_storm_control = False  # Whether the wsp for the storm control should be lowered
 model = "IEC_Ya_Later"  # "dtu_10mw" or "IEC_Ya_Later"
+special_case = "tower_exclusion_v6"
 
 # define folders
 ROOT = Path(__file__).parent
@@ -67,7 +70,6 @@ if create_turb:
     TURB_HTC_DIR = Path(f'./htc/turb/{DESIGN_NAME}/')  # where to save the step-wind files
     RES_DIR = Path(f'./res/turb/{DESIGN_NAME}/')
     CASES = ['tca', 'tcb']
-    special_case = "tower_exclusion_v2"
     TI_REF = {"tca": .16, "tcb": .14}  # Turbulence intensities for IEC A & B
     TIME_START = 100
     TIME_STOP = 700
@@ -88,27 +90,44 @@ if create_turb:
         ctrl_tuning_file = load_ctrl_txt(ctrl_path)
 
         # Tower resonance exclusion zone
-        op_data = load_oper(OPT_PATH)
-        op_data["rotor_speed_rad/s"] = op_data["rotor_speed_rpm"]*2*np.pi/60
-        op_data["GenTrq_kNm"] =  op_data["power_kw"] \
-            / op_data["rotor_speed_rad/s"]
+        if tow_rot_excl:
+            op_data = load_oper(OPT_PATH)
+            op_data["rotor_speed_rad/s"] = \
+                op_data["rotor_speed_rpm"]*2*np.pi/60
+            op_data["GenTrq_kNm"] =  op_data["power_kw"] \
+                / op_data["rotor_speed_rad/s"]
 
-        mask_below_rated = op_data["power_kw"]<1e4
+            mask_below_rated = op_data["power_kw"]<1e4
 
-        omega_L_Hz = .13/3  # Lower exclusion zone rotational speed limit [Hz]
-        omega_H_Hz = .37/3  # Upper exclusion zone rotational speed limit [Hz]
+            omega_L_Hz = .15/3  # Lower exclusion zone rotational speed limit [Hz]
+            omega_H_Hz = .3/3  # Upper exclusion zone rotational speed limit [Hz]
 
-        omega_L_rads = omega_L_Hz*2*np.pi
-        omega_H_rads = omega_H_Hz*2*np.pi
+            omega_L_rads = omega_L_Hz*2*np.pi
+            omega_H_rads = omega_H_Hz*2*np.pi
 
 
-        Q_gL_opt, Q_gH_opt = np.interp(
-            np.array([omega_L_Hz, omega_H_Hz])*60,
-            op_data["rotor_speed_rpm"][mask_below_rated],
-            op_data["GenTrq_kNm"][mask_below_rated]*1e3)
+            Q_gL_opt, Q_gH_opt = np.interp(
+                np.array([omega_L_Hz, omega_H_Hz])*60,
+                op_data["rotor_speed_rpm"][mask_below_rated],
+                op_data["GenTrq_kNm"][mask_below_rated]*1e3)
 
-        Q_gL = 1.07*Q_gH_opt
-        Q_gH = .93*Q_gL_opt
+            Q_gL = 1.07*Q_gH_opt
+            Q_gH = .93*Q_gL_opt
+
+        # Default values
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+    import warnings
+
+    omega_L_rads = 0.39
+    omega_H_rads = 0.75
+
+    Q_gL = 9.5e6
+    Q_gH = 3e6
+
+    warnings.warn("TOWER EXCLUSION ZONE OVERWRITTEN WITH EXAMPLE VALUES!")
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
     random.seed(START_SEED)
 
@@ -128,10 +147,24 @@ if create_turb:
                                             min_rot_speed=omega_min_LSS,
                                             rated_rot_speed=omega_rtd_LSS)
 
-                    htc.make_tower_exclusion_zone(omega_L=omega_L_rads,
-                                                  omega_H=omega_H_rads,
-                                                  Q_gL=Q_gL, Q_gH=Q_gH, tau=25)
+                    # Update rotor diameter in controller dll
+                    r_hub = htc.new_htc_structure.main_body__4.c2_def.sec__2.values[-2]
+                    l_bld = htc.new_htc_structure.main_body__7.c2_def.sec__27.values[-2]
+                    r_rotor = r_hub + l_bld
+                    htc.dll.type2_dll__1.init.constant__47 = [47, 2*r_rotor]
 
+                    # if low_storm_control:
+                    #     # Alter storm control
+                    #     htc.dll.type2_dll__1.init.constant__43 = [43, 22]
+                    #     htc.dll.type2_dll__1.init.constant__44 = [44, 22]
+
+
+                    if tow_rot_excl:
+                        htc.dll.type2_dll__1.init.constant__2 = [2, 0]  # Remove minimum rotor speed
+                        htc.make_tower_exclusion_zone(omega_L=omega_L_rads,
+                                                      omega_H=omega_H_rads,
+                                                      Q_gL=Q_gL, Q_gH=Q_gH,
+                                                      tau=25)
 
                 subfolder = special_case + "/" + tc if special_case else tc
                 htc.make_turb(wsp=wsp, ti=TI_REF[tc]*(0.75*wsp+5.6)/wsp,
