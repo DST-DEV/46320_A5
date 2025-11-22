@@ -5,6 +5,7 @@
 *_hs2.htc
 *_step.htc
 *_turb.htc
+hawc_files/htc/*
 htc/**
 res/**
 */turb/*
