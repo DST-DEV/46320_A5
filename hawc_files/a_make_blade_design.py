@@ -493,15 +493,14 @@ if SHOW_PLOT:
 # Get your new rotor design using: single_point_design
 rotor_design = {}
 for key in ds_spo.keys():
-    rotor_design[key] = ds_spo[key][:, idx_CPmax, idx_des+1].values
+    rotor_design[key] = ds_spo[key].sel(tsr=TSR_max, func=idx_des+1,
+                                        method="nearest").values
 
-np.save("./data/array_aoa.npy",
-        ds_spo['aoa'].sel(tsr=7, func=1, method='nearest').values)
-np.save("./data/array_cl.npy",
-        ds_spo['cl'].sel(tsr=7, func=1, method='nearest').values)
-np.save("./data/array_cd.npy",
-        ds_spo['cd'].sel(tsr=7, func=1, method='nearest').values)
-np.save("./data/array_r.npy", r)
+np.savez(f"./data/{DESIGN_NAME}_aero_params.npz",
+        aoa_deg=ds_spo['aoa'].sel(tsr=7, func=1, method='nearest').values,
+        C_l=ds_spo['cl'].sel(tsr=7, func=1, method='nearest').values,
+        C_d=ds_spo['cd'].sel(tsr=7, func=1, method='nearest').values,
+        r=r)
 # %% Scale structural data
 # Scale the structural data using: scale_ST_data
 st_data_flex = load_st(ORIG_BLADE_ST, 0, 0)
@@ -610,6 +609,7 @@ htc.new_htc_structure.main_body(name="blade1").timoschenko_input.filename = \
     "./" + str(TARGET_BLADE_ST.relative_to(ROOT))
 htc.aero.ae_filename = "./" + str(TARGET_AE.relative_to(ROOT))
 htc.hawcstab2.operational_data.opt_lambda.values = [TSR_max]
+htc.hawcstab2.operational_data.genspeed.values[0] = 0
 htc.hawcstab2.operational_data.genspeed.values[1] = GEN_SPEED_MAX
 htc.save(TARGET_HTC)
 

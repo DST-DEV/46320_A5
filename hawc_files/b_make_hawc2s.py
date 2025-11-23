@@ -35,9 +35,9 @@ create_flex = True  # Whether flexible simulation files should be created
 ROOT = Path(__file__).parent
 MASTER_FILE = ROOT / '_master' / f'{DESIGN_NAME}.htc'
 TARGET_DIR = ROOT / 'htc' / 'hawc2s'  # HTC save folder
-OPT_FILE_RIGID_TEMPLATE = ROOT / 'data' / 'dtu_10mw_rigid.opt'
+OPT_FILE_RIGID_TEMPLATE = ROOT / 'data' / f'{DTU_NAME}_rigid.opt'
 OPT_FILE_RIGID = ROOT / 'data' / f'{DESIGN_NAME}_rigid.opt'
-OPT_FILE_FLEX_TEMPLATE = ROOT / 'data' / 'dtu_10mw_flex.opt'
+OPT_FILE_FLEX_TEMPLATE = ROOT / 'data' / f'{DTU_NAME}_flex.opt'
 OPT_FILE_FLEX = ROOT / 'data' / f'{DESIGN_NAME}_flex.opt'
 
 # We have to keep the rotational speed to the opt(TSR)*rated_ws/tip_radius
@@ -52,7 +52,7 @@ if tsr_oper == -1:
 
 if create_tsr_analysis:
     # Create opt files
-    tsrs = np.arange(5, 10.1, .25)
+    tsrs = np.arange(5, 10.1, .2)
     N_tsr = len(tsrs)
     wsp = 8  # Arbitrary below rated wind speed [m/s]
     omega_rot_rpm = tsrs*wsp/des_params["R"] * 60 / (2*np.pi)  # Rotor speed [rpm]

@@ -415,7 +415,7 @@ if eval_AEP:
             ax_l.grid(which="major", zorder=1)
             ax_r.grid(which="both", visible=False)
 
-            # Change color or right axis
+            # Change color of right axis
             ax_r.tick_params(axis='y', which = "both", colors=ax_r_col)
             ax_r.yaxis.label.set_color(ax_r_col)
             ax_r.spines['right'].set_color(ax_r_col)
