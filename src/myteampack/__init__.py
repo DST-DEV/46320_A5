@@ -52,6 +52,8 @@ class MyHTC(HTCFile):
                                                      'compute steady states -- needed for aeroelastic calculations'],
                            'save_power': [[''], 'save steady-state values to .pwr'],
                            'save_induction': [[''], 'save steady-state spanwise values to .ind files, 3 for each wind speed'],
+                           'compute_structural_modal_analysis': [[f'nobladeonly {num_modes}'],
+                                                          'compute/save structural campbell diagram (.cmb), XX modes'],
                            'compute_stability_analysis': [[f'windturbine {num_modes}'],
                                                           'compute/save aeroelastic campbell diagram (.cmb), XX modes'],
                            'save_modal_amplitude': [[''], 'save modal amplitudes and phrases to .amb file'],

@@ -27,9 +27,12 @@ DESIGN_NAME = "IEC_What_You_Did_There"
 DTU_NAME = 'dtu_10mw'
 tsr_oper = -1  # Operational tsr [-1 if design tsr should be used]
 
-create_tsr_analysis = True  # Whether 1wsp and multitsr files should be created
-create_rigid = True  # Whether rigid simulation files should be created
-create_flex = True  # Whether flexible simulation files should be created
+create_tsr_analysis = False  # Whether 1wsp and multitsr files should be created
+create_rigid = False  # Whether rigid simulation files should be created
+create_flex = False  # Whether flexible simulation files should be created
+create_modal_struct = True  # Whether the structural modal analysis files should be created
+create_modal_aeroelastic = True  # Whether the structural modal analysis files should be created
+save_modal_amp = True  # Whether the modal amplitudes should be saved
 
 # %% Path preparations and file loading
 ROOT = Path(__file__).parent
@@ -117,6 +120,33 @@ if create_flex:
                     save_power=True,
                     save_induction=False,
                     compute_optimal_pitch_angle=True,
+                    minipitch=0,
+                    opt_lambda=tsr_oper,
+                    genspeed=GENSPEED)
+
+# %% Structural modal analysis
+if create_modal_struct:
+    htc = MyHTC(MASTER_FILE)
+    htc.make_hawc2s(TARGET_DIR,
+                    rigid=False,
+                    append='_hawc2s_modal_structural',
+                    opt_path=f'./res/hawc2s/{DESIGN_NAME}_hawc2s_flex.opt',
+                    compute_structural_modal_analysis=True,
+                    save_modal_amplitude=save_modal_amp,
+                    minipitch=0,
+                    opt_lambda=tsr_oper,
+                    genspeed=GENSPEED)
+
+# %% Aeroelastic modal analysis
+if create_modal_aeroelastic:
+    htc = MyHTC(MASTER_FILE)
+    htc.make_hawc2s(TARGET_DIR,
+                    rigid=False,
+                    append='_hawc2s_modal_aeroelastic',
+                    opt_path=f'./res/hawc2s/{DESIGN_NAME}_hawc2s_flex.opt',
+                    compute_steady_states=True,
+                    compute_stability_analysis=True,
+                    save_modal_amplitude=save_modal_amp,
                     minipitch=0,
                     opt_lambda=tsr_oper,
                     genspeed=GENSPEED)
