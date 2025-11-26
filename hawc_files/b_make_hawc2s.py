@@ -5,7 +5,7 @@ This file should create the following htc files:
  * _hawc2s_multitsr.htc
  * _hawc2s_rigid.htc
  * _hawc2s_flex.htc
- * _hawc2s_ctrltune_fX_dY_C[T/P].htc (7 files)
+ * _hawc2s_ctrltune_fX_dY_C[T/P].htc
  * ...and more?
 
 We recommend saving the HAWC2S files in a dedicated subfolder. If you
@@ -17,22 +17,25 @@ from pathlib import Path
 import json
 import shutil
 
-from myteampack import MyHTC
+from lacbox.io import save_oper
 import numpy as np
 
-from lacbox.io import save_oper
+from myteampack import MyHTC
 
 # %% User inputs
 DESIGN_NAME = "IEC_What_You_Did_There"
 DTU_NAME = 'dtu_10mw'
 tsr_oper = -1  # Operational tsr [-1 if design tsr should be used]
+nat_freq = np.arange(.04, .06, .002)
+damp_ratio = np.arange(.6, .9, .05)
 
 create_tsr_analysis = False  # Whether 1wsp and multitsr files should be created
 create_rigid = False  # Whether rigid simulation files should be created
 create_flex = False  # Whether flexible simulation files should be created
-create_modal_struct = True  # Whether the structural modal analysis files should be created
-create_modal_aeroelastic = True  # Whether the structural modal analysis files should be created
+create_modal_struct = False  # Whether the structural modal analysis files should be created
+create_modal_aeroelastic = False  # Whether the structural modal analysis files should be created
 save_modal_amp = True  # Whether the modal amplitudes should be saved
+create_ctrl_tuning = True  # Whether controller turning files should be created
 
 # %% Path preparations and file loading
 ROOT = Path(__file__).parent
@@ -150,3 +153,32 @@ if create_modal_aeroelastic:
                     minipitch=0,
                     opt_lambda=tsr_oper,
                     genspeed=GENSPEED)
+
+if create_ctrl_tuning:
+    ctrl_dir = TARGET_DIR / "ctrltune"
+
+    # Clear the current folder
+    if ctrl_dir.is_dir():
+        print(f'! Folder {ctrl_dir} exists: deleting contents. !')
+        shutil.rmtree(ctrl_dir) # delete the folder
+        ctrl_dir.mkdir(parents=True)  # make an empty folder
+    elif not ctrl_dir.is_dir():  # if the folder doesn't exists
+        ctrl_dir.mkdir(parents=True)  # make the folder
+
+    for f in nat_freq:
+        for d in damp_ratio:
+            htc = MyHTC(MASTER_FILE)
+            fname = f"_hawc2s_ctrltune_CT_f{f:5.3f}_Z{d:4.2f}"
+            htc.make_hawc2s_ctrltune(
+                TARGET_DIR / "ctrltune", append=fname,
+                output_folder="res/hawc2s/ctrltune",
+                opt_path=f'./res/hawc2s/{DESIGN_NAME}_hawc2s_flex.opt',
+                rigid=False,
+                compute_steady_states=True,
+                compute_controller_input = True,
+                save_power=True,
+                save_induction=False,
+                minipitch=0, opt_lambda=des_params["tsr_des"],
+                genspeed=GENSPEED,
+                partial_load=(0.05, 0.7), full_load=(f, d),
+                gain_scheduling=2, constant_power=0)

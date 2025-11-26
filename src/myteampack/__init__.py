@@ -43,7 +43,9 @@ class MyHTC(HTCFile):
         ind_key = ['no', ''][induction]  # induction or no?
         # add the pre-amble and output folder
         self.hawcstab2.add_line(name='', values=[''], comments='\n; HAWC2S commands (uncomment as needed)')
-        self.hawcstab2.add_line(name='output_folder', values=['res_hawc2s'], comments='define the folder where generated files should be saved')
+
+        output_folder = kwargs["output_folder"] if "output_folder" in kwargs else 'res_hawc2s'
+        self.hawcstab2.add_line(name='output_folder', values=[output_folder], comments='define the folder where generated files should be saved')
         # commands, options, and comments for hawc2s commands
         hawc2s_commands = {'compute_optimal_pitch_angle': [['use_operational_data'],
                                                            're-calculate and save opt file (pitch/rotor speed curve)'],
@@ -288,7 +290,6 @@ class MyHTC(HTCFile):
                   resdir='res_turb/', opt_path=None, tilt=None, subfolder='',
                   rigid=False, withdrag=True, time_start=100, time_stop=700):
         """Make a turbulent wind htc file."""
-        # delete hawcstab2 block for a cleaner file
         del self.hawcstab2
 
         # delete any steps
