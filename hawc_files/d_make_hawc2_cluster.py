@@ -135,7 +135,7 @@ if create_turb:
     _clean_directory(TURB_HTC_DIR / special_case, DEL_HTC_DIR)
 
     # Make the turbulent wind files
-    for idx_seed in range(6):
+    for idx_seed in range(NSEEDS):
         for wsp in WSPS:
             sim_seed = random.randrange(int(2**16))
             for tc in CASES:

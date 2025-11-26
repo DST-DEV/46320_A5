@@ -167,7 +167,7 @@ for turbine, stats in stats_dict.items():
                 ds_stats_raw[ch].loc[{"wsp": wsp_i, "stat": "del10min",
                                   "turbine": turbine, "tc": tc_i}] = dels_10min
 
-                dels_1h = np.sum(dels_10min**m_chan/6, axis=-1)**(1/m_chan)
+                dels_1h = np.sum(dels_10min**m_chan/N_sim, axis=-1)**(1/m_chan)
                 ds_stats_eval[ch].loc[{"wsp": wsp_i, "stat": "del1h",
                                        "turbine": turbine, "tc": tc_i}
                                       ] = dels_1h

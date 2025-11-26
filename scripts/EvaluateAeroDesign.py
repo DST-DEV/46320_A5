@@ -12,12 +12,12 @@ DESIGN_NAME = "IEC_What_You_Did_There"
 DESIGN_NAME_OLD = "IEC_Ya_Later"
 DTU_NAME = "dtu_10mw"
 
-eval_1wsp = False
+eval_1wsp =True
 eval_multitsr = True
-eval_rigid = False
-eval_flex = False
+eval_rigid = True
+eval_flex = True
 
-save_plots = False
+save_plots = True
 exp_fld = "plots/aero_eval"  # Figure export path( relative to project root)
 
 colors_2line = ['#0d0887', '#e97a54']
@@ -143,7 +143,7 @@ if eval_multitsr:
                                                    scale=.7)
     with mpl.rc_context(rc_profile):
         fig, ax_l = scivis.subplots(profile="partsize", scale=.7,
-                                    figsize=(20,8))
+                                    figsize=(20, 8))
         ax_r = ax_l.twinx()
         ax_r.zorder = 2
 
